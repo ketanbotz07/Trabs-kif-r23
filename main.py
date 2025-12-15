@@ -1,82 +1,87 @@
 import os
-import random
-import cv2
+import uuid
 from flask import Flask, request, jsonify
-from moviepy.editor import VideoFileClip, concatenate_videoclips
+from moviepy.editor import VideoFileClip, vfx
 
 app = Flask(__name__)
 
 UPLOAD_DIR = "uploads"
 OUTPUT_DIR = "outputs"
+
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+# In-memory job status store
+JOBS = {}
 
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "status": "running",
-        "message": "Auto Video Transformer API is live",
-        "endpoint": "/process",
-        "method": "POST"
+        "message": "Auto Video Transform Bot LIVE",
+        "endpoints": {
+            "process": "/process (POST)",
+            "status": "/status/<job_id> (GET)"
+        }
     })
 
-
-def random_zoom(frame, zoom_factor):
-    h, w, _ = frame.shape
-    nw, nh = int(w / zoom_factor), int(h / zoom_factor)
-    x = random.randint(0, w - nw)
-    y = random.randint(0, h - nh)
-    frame = frame[y:y + nh, x:x + nw]
-    return cv2.resize(frame, (w, h))
-
-
-def transform_clip(clip):
-    zoom = random.uniform(1.05, 1.2)
-
-    def process(frame):
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        frame = random_zoom(frame, zoom)
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        return frame
-
-    return clip.fl_image(process)
-
+@app.route("/status/<job_id>", methods=["GET"])
+def job_status(job_id):
+    if job_id not in JOBS:
+        return jsonify({"error": "Invalid job id"}), 404
+    return jsonify(JOBS[job_id])
 
 @app.route("/process", methods=["POST"])
 def process_video():
     if "video" not in request.files:
-        return jsonify({"error": "video file missing"}), 400
+        return jsonify({"error": "No video uploaded"}), 400
+
+    job_id = str(uuid.uuid4())
+    JOBS[job_id] = {"status": "queued"}
 
     file = request.files["video"]
-    input_path = os.path.join(UPLOAD_DIR, file.filename)
-    output_path = os.path.join(OUTPUT_DIR, f"out_{file.filename}")
+    input_path = os.path.join(UPLOAD_DIR, f"{job_id}_{file.filename}")
+    output_path = os.path.join(OUTPUT_DIR, f"out_{job_id}.mp4")
+
     file.save(input_path)
 
-    clip = VideoFileClip(input_path)
-    duration = clip.duration
+    try:
+        JOBS[job_id]["status"] = "processing"
 
-    clips = []
-    start = 0
-    while start < duration:
-        seg = random.uniform(1.5, 3.0)
-        end = min(start + seg, duration)
-        clips.append(transform_clip(clip.subclip(start, end)))
-        start = end
+        clip = VideoFileClip(input_path)
+        clip = clip.subclip(0, min(120, clip.duration))
 
-    final = concatenate_videoclips(clips, method="compose")
-    final.write_videofile(
-        output_path,
-        codec="libx264",
-        audio_codec="aac",
-        threads=2
-    )
+        JOBS[job_id]["status"] = "transforming"
 
-    return jsonify({
-        "status": "done",
-        "output_file": output_path
-    })
+        clip = clip.fx(vfx.crop, x_center=clip.w/2, y_center=clip.h/2,
+                       width=clip.w*0.9, height=clip.h*0.9)
+        clip = clip.resize(1.1)
 
+        JOBS[job_id]["status"] = "encoding"
+
+        clip.write_videofile(
+            output_path,
+            codec="libx264",
+            audio_codec="aac",
+            threads=2,
+            verbose=False,
+            logger=None
+        )
+
+        JOBS[job_id]["status"] = "completed"
+        JOBS[job_id]["output"] = output_path
+
+        return jsonify({
+            "job_id": job_id,
+            "status": "completed",
+            "output": output_path
+        })
+
+    except Exception as e:
+        JOBS[job_id]["status"] = "failed"
+        JOBS[job_id]["error"] = str(e)
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
