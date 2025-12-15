@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual env
+venv/
+.env
+
+# Video files
+uploads/*
+outputs/*
+
+# OS
+.DS_Store
+Thumbs.db
