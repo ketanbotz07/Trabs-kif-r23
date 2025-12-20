@@ -1,5 +1,4 @@
 from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import StreamingResponse
 from video_processor import process_video
 import uuid
 import os
@@ -11,7 +10,6 @@ progress = {}
 
 @app.post("/upload")
 async def upload_video(file: UploadFile = File(...)):
-    # Create folders
     os.makedirs("input", exist_ok=True)
     os.makedirs("output", exist_ok=True)
 
@@ -19,7 +17,6 @@ async def upload_video(file: UploadFile = File(...)):
     input_path = f"input/{uid}.mp4"
     output_path = f"output/{uid}_final.mp4"
 
-    # Save uploaded file
     with open(input_path, "wb") as f:
         f.write(await file.read())
 
@@ -31,13 +28,8 @@ async def upload_video(file: UploadFile = File(...)):
 
     threading.Thread(target=run_process).start()
 
-    return {
-        "task_id": uid,
-        "status": "processing"
-    }
+    return {"task_id": uid, "status": "processing"}
 
 @app.get("/progress/{task_id}")
 async def get_progress(task_id: str):
-    return {
-        "progress": progress.get(task_id, 0)
-    }
+    return {"progress": progress.get(task_id, 0)}
