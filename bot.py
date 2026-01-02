@@ -1,55 +1,34 @@
 import os
-from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters
+from pyrogram import Client, filters
+from config import *
+from core.segmenter import split_video
+from core.transform import transform_all
+from core.merge import merge_all
+
+
+app = Client(
+"auto2sec",
+api_id=API_ID,
+api_hash=API_HASH,
+bot_token=BOT_TOKEN
 )
-from video_processor import transform_video
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎬 Send me a video (max 2 minutes).\n"
-        "I will auto cut, zoom & transform it."
-    )
+@app.on_message(filters.video)
+async def handle_video(client, message):
+os.makedirs(TEMP_DIR, exist_ok=True)
+input_path = await message.download()
 
-async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    status = await update.message.reply_text("⏳ Processing video, wait...")
 
-    video = update.message.video or update.message.document
-    file = await video.get_file()
+await message.reply("⏳ Editing started (2 sec per edit)...")
 
-    input_path = "input.mp4"
-    output_path = "output.mp4"
 
-    await file.download_to_drive(input_path)
+segments = split_video(input_path)
+edited = transform_all(segments)
+output = merge_all(edited)
 
-    transform_video(input_path, output_path)
 
-    await update.message.reply_video(
-        video=open(output_path, "rb"),
-        caption="✅ Video transformed (reuse-safe)"
-    )
+await message.reply_video(output)
 
-    os.remove(input_path)
-    os.remove(output_path)
-    await status.delete()
 
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(
-        MessageHandler(filters.VIDEO | filters.Document.VIDEO, handle_video)
-    )
-
-    print("Telegram bot started...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
-    
+app.run()
