@@ -1,4 +1,4 @@
-python-telegram-bot==20.7
-moviepy
-opencv-python-headless
-numpy
+pyrogram==2.0.106
+tgcrypto
+ffmpeg-python
+python-dotenv
